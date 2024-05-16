@@ -609,6 +609,41 @@ def my_dbt_assets(context: AssetExecutionContext, dbt: DbtCliResource):
 
 ---
 
+## Generate row count data for dbt models
+
+<Note>
+  <strong>
+    Emitting row count data for dbt models is currently an experimental
+    feature.{" "}
+  </strong>{" "}
+  To use this feature, you'll need to be on at least{" "}
+  <code>dagster>=0.17.6</code> and
+  <code>dagster-dbt>=0.23.6</code>.
+</Note>
+
+Dagster has the ability to automatically fetch row counts for dbt-generated tables and emit them as [materialization metadata](/concepts/metadata-tags/asset-metadata) to be displayed in the Dagster UI.
+
+Row counts are fetched in parallel to the execution of your dbt models. To enable this feature, call PyObject module="dagster_dbt" object="DbtEventIterator" method="fetch_row_counts" /> on the \<PyObject module="dagster_dbt" object="DbtEventIterator/> returned by the `stream()` dbt CLI call:
+
+```python startafter=start_fetch_row_count endbefore=end_fetch_row_count file=/integrations/dbt/dbt.py dedent=4
+from pathlib import Path
+from dagster import AssetKey, AssetExecutionContext
+from dagster_dbt import DagsterDbtTranslator, DbtCliResource, dbt_assets
+from typing import Any, Mapping
+
+manifest_path = Path("path/to/dbt_project/target/manifest.json")
+
+@dbt_assets(
+    manifest=manifest_path,
+)
+def my_dbt_assets(context: AssetExecutionContext, dbt: DbtCliResource):
+    yield from dbt.cli(["build"], context=context).stream().fetch_row_counts()
+```
+
+Once your dbt models have been materialized, you can view the row count data in the metadata table.
+
+---
+
 ## Emit column-level lineage as materialization metadata
 
 <Note>
