@@ -43,11 +43,11 @@ if TYPE_CHECKING:
 # static factory
 class Scheduling:
     @staticmethod
-    def eager(
+    def eager_with_rate_limit(
         *,
         failure_retry_delta: datetime.timedelta = datetime.timedelta(hours=1),
     ) -> "SchedulingCondition":
-        return SchedulingCondition.eager(failure_retry_delta=failure_retry_delta)
+        return SchedulingCondition.eager_with_rate_limit(failure_retry_delta=failure_retry_delta)
 
     @staticmethod
     def on_cron(cron_schedule: str, cron_timezone: str = "UTC") -> "SchedulingCondition":
