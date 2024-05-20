@@ -30,13 +30,19 @@ from typing_extensions import TypeAlias
 
 import dagster._check as check
 import dagster._seven as seven
-from dagster._core.assets import AssetDetails
+from dagster._core.assets import (
+    AssetDetails,
+    PartitionWipeRecord,
+    update_last_partition_wipe_records,
+)
 from dagster._core.definitions.asset_check_evaluation import (
     AssetCheckEvaluation,
     AssetCheckEvaluationPlanned,
 )
 from dagster._core.definitions.asset_check_spec import AssetCheckKey
 from dagster._core.definitions.events import AssetKey, AssetMaterialization
+from dagster._core.definitions.partition import PartitionsDefinition
+from dagster._core.definitions.partition_key_range import PartitionKeyRange
 from dagster._core.errors import (
     DagsterEventLogInvalidForRun,
     DagsterInvalidInvocationError,
@@ -1768,6 +1774,35 @@ class SqlEventLogStorage(EventLogStorage):
             conn.execute(
                 AssetKeyTable.update()
                 .values(**wiped_values)
+                .where(
+                    AssetKeyTable.c.asset_key == asset_key.to_string(),
+                )
+            )
+
+    def wipe_asset_partition_range(
+        self,
+        asset_key: AssetKey,
+        partition_range: PartitionKeyRange,
+        partitions_def: PartitionsDefinition,
+    ) -> None:
+        check.inst_param(asset_key, "asset_key", AssetKey)
+        wipe_timestamp = pendulum.now("UTC").timestamp()
+        details = self._get_assets_details([asset_key])[0]
+        wipe_record = PartitionWipeRecord(partition_range, wipe_timestamp)
+        if details is None:
+            new_details = AssetDetails(last_partition_wipe_timestamps=[wipe_record])
+        else:
+            new_details = details._replace(
+                partition_wipe_timestamps=update_last_partition_wipe_records(
+                    existing=details.last_partition_wipe_timestamps,
+                    new=wipe_record,
+                    partitions_def=partitions_def,
+                )
+            )
+        with self.index_connection() as conn:
+            conn.execute(
+                AssetKeyTable.update()
+                .values({"asset_details": serialize_value(new_details)})
                 .where(
                     AssetKeyTable.c.asset_key == asset_key.to_string(),
                 )

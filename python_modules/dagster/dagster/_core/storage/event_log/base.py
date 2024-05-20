@@ -16,6 +16,8 @@ from dagster._core.assets import AssetDetails
 from dagster._core.definitions.asset_check_spec import AssetCheckKey
 from dagster._core.definitions.data_version import DATA_VERSION_TAG
 from dagster._core.definitions.events import AssetKey
+from dagster._core.definitions.partition import PartitionsDefinition
+from dagster._core.definitions.partition_key_range import PartitionKeyRange
 from dagster._core.event_api import (
     AssetRecordsFilter,
     EventHandlerFn,
@@ -390,7 +392,16 @@ class EventLogStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance]):
 
     @abstractmethod
     def wipe_asset(self, asset_key: AssetKey) -> None:
-        """Remove asset index history from event log for given asset_key."""
+        """Remove asset index history from event log for given asset key."""
+
+    @abstractmethod
+    def wipe_asset_partition_range(
+        self,
+        asset_key: AssetKey,
+        partition_range: PartitionKeyRange,
+        partitions_def: PartitionsDefinition,
+    ) -> None:
+        """Remove asset index history from event log for given asset partition."""
 
     @abstractmethod
     def get_materialized_partitions(

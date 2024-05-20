@@ -23,12 +23,14 @@ from typing import (
 
 import dagster._check as check
 from dagster._core.definitions.asset_check_spec import AssetCheckKey
-from dagster._core.definitions.events import AssetKey
+from dagster._core.definitions.events import AssetKey, AssetKeyPartitionKey
 from dagster._core.definitions.remote_asset_graph import RemoteAssetGraph
 from dagster._core.definitions.selector import GraphSelector, JobSubsetSelector
 from dagster._core.workspace.context import BaseWorkspaceRequestContext
 from dagster._utils.error import serializable_error_info_from_exc_info
 from typing_extensions import ParamSpec, TypeAlias
+
+from dagster_graphql.schema.inputs import GrapheneAssetKeyInput, GrapheneAssetPartitionsInput
 
 if TYPE_CHECKING:
     from dagster_graphql.schema.errors import GrapheneError, GraphenePythonError
@@ -124,6 +126,19 @@ def assert_permission_for_asset_graph(
 
 def _noop(_) -> None:
     pass
+
+
+def asset_partitions_from_input(
+    input_asset_partitions: Union[GrapheneAssetKeyInput, GrapheneAssetPartitionsInput],
+) -> "Sequence[AssetKeyPartitionKey]":
+    asset_key = AssetKey(input_asset_partitions["path"])
+    if isinstance(input_asset_partitions, GrapheneAssetKeyInput):
+        return [AssetKeyPartitionKey(asset_key, None)]
+    else:
+        return [
+            AssetKeyPartitionKey(asset_key, partition_key)
+            for partition_key in input_asset_partitions["partitions"]
+        ]
 
 
 class ErrorCapture:

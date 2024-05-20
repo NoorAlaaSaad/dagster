@@ -41,6 +41,7 @@ from dagster._core.definitions.asset_check_evaluation import (
 )
 from dagster._core.definitions.data_version import extract_data_provenance_from_entry
 from dagster._core.definitions.events import AssetKey, AssetObservation
+from dagster._core.definitions.partition_key_range import PartitionKeyRange
 from dagster._core.errors import (
     DagsterHomeNotSetError,
     DagsterInvalidInvocationError,
@@ -2253,11 +2254,19 @@ class DagsterInstance(DynamicPartitionsStore):
         """Wipes asset event history from the event log for the given asset keys.
 
         Args:
-            asset_keys (Sequence[AssetKey]): Asset keys to wipe.
+            asset_keys (Sequence[AssetKey): Asset keys to wipe.
         """
         check.list_param(asset_keys, "asset_keys", of_type=AssetKey)
-        for asset_key in asset_keys:
-            self._event_storage.wipe_asset(asset_key)
+        for key_or_tuple in asset_keys:
+            self._event_storage.wipe_asset(key_or_tuple)
+
+    def wipe_asset_partition_range(
+        self,
+        asset_key: AssetKey,
+        partition_range: PartitionKeyRange,
+        partitions_def: "PartitionsDefinition",
+    ) -> None:
+        self._event_storage.wipe_asset_partition_range(asset_key, partition_range, partitions_def)
 
     @traced
     def get_materialized_partitions(

@@ -60,6 +60,7 @@ from ..errors import (
 from ..external import GrapheneWorkspace, GrapheneWorkspaceLocationEntry
 from ..inputs import (
     GrapheneAssetKeyInput,
+    GrapheneAssetPartitionsInput,
     GrapheneExecutionParams,
     GrapheneLaunchBackfillParams,
     GrapheneReexecutionParams,
@@ -676,7 +677,11 @@ class GrapheneAssetWipeMutation(graphene.Mutation):
 
     @capture_error
     @check_permission(Permissions.WIPE_ASSETS)
-    def mutate(self, graphene_info: ResolveInfo, assetKeys: Sequence[GrapheneAssetKeyInput]):
+    def mutate(
+        self,
+        graphene_info: ResolveInfo,
+        assetKeys: Sequence[Union[GrapheneAssetKeyInput, GrapheneAssetPartitionsInput]],
+    ):
         return wipe_assets(
             graphene_info, [AssetKey.from_graphql_input(asset_key) for asset_key in assetKeys]
         )

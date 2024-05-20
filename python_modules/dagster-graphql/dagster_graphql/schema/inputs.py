@@ -16,6 +16,14 @@ class GrapheneAssetKeyInput(graphene.InputObjectType):
         name = "AssetKeyInput"
 
 
+class GrapheneAssetPartitionsInput(graphene.InputObjectType):
+    assetKey = graphene.NonNull(GrapheneAssetKeyInput)
+    partitions = non_null_list(graphene.String)
+
+    class Meta:
+        name = "AssetPartitionsInput"
+
+
 class GrapheneAssetCheckHandleInput(graphene.InputObjectType):
     assetKey = graphene.NonNull(GrapheneAssetKeyInput)
     name = graphene.NonNull(graphene.String)

@@ -173,6 +173,9 @@ class PartitionsDefinition(ABC, Generic[T_str]):
         partition_keys = self.get_partition_keys(current_time, dynamic_partitions_store)
         return partition_keys[0] if partition_keys else None
 
+    def get_partition_key(self, index: int) -> T_str:
+        return self.get_partition_keys()[index]
+
     def get_partition_keys_in_range(
         self,
         partition_key_range: PartitionKeyRange,
@@ -205,6 +208,63 @@ class PartitionsDefinition(ABC, Generic[T_str]):
             )
             + 1
         ]
+
+    def subtract_ranges(
+        self, range_1: PartitionKeyRange, range_2: PartitionKeyRange
+    ) -> Sequence[PartitionKeyRange]:
+        """Given two ranges, subtract range_2 from range_1 and return the result as a list of ranges.
+
+        Examples:
+            p = StaticPartitionsDefinition([str(x) for x in range(10)])
+
+            range_1 = PartitionKeyRange(start="0", end="9")
+            range_2 = PartitionKeyRange(start="3", end="6")
+            p.subtract_range(range_1, range_2) => [
+                PartitionKeyRange(start=0, end=2,
+                PartitionKeyRange(start=7, end=10)
+            ]
+
+
+            range_3 = PartitionKeyRange(start="4", end="7")
+            range_4 = PartitionKeyRange(start="2", end="5")
+            p.subtract_range(range_3, range_4) => [
+                PartitionKeyRange(start=6, end=7),
+            ]
+
+            range_5 = PartitionKeyRange(start="6", end="9")
+            range_6 = PartitionKeyRange(start="2", end="5")
+            p.subtract_range(range_5, range_6) => []
+        """
+        r1_start = self.get_key_index(range_1.start)
+        r1_end = self.get_key_index(range_1.end)
+        r2_start = self.get_key_index(range_2.start)
+        r2_end = self.get_key_index(range_2.end)
+        if r2_start <= r1_start:
+            if r2_end < r1_start:
+                return [range_1]
+            elif r2_end < r1_end:
+                return [
+                    PartitionKeyRange(start=self.get_partition_key(r2_end + 1), end=range_1.end)
+                ]
+            else:
+                return []
+        elif r2_start <= r1_end:
+            if r2_end < r1_end:
+                return [
+                    PartitionKeyRange(
+                        start=range_1.start, end=self.get_partition_key(r2_start - 1)
+                    ),
+                    PartitionKeyRange(start=self.get_partition_key(r2_end + 1), end=range_1.end),
+                ]
+            else:
+                return [
+                    PartitionKeyRange(start=range_1.start, end=self.get_partition_key(r2_start - 1))
+                ]
+        else:
+            return [range_1]
+
+    def get_key_index(self, partition_key: str) -> int:
+        return self.get_partition_keys().index(partition_key)
 
     def empty_subset(self) -> "PartitionsSubset":
         return self.partitions_subset_class.empty_subset(self)

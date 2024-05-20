@@ -1,8 +1,10 @@
 from typing import NamedTuple
 
 from dagster._annotations import PublicAttr
+from dagster._serdes.serdes import whitelist_for_serdes
 
 
+@whitelist_for_serdes
 class PartitionKeyRange(NamedTuple):
     """Defines a range of partitions.
 
@@ -20,3 +22,6 @@ class PartitionKeyRange(NamedTuple):
     # Inclusive on both sides
     start: PublicAttr[str]
     end: PublicAttr[str]
+
+    def has_overlap(self, other: "PartitionKeyRange") -> bool:
+        return self.start <= other.end and self.end >= other.start
