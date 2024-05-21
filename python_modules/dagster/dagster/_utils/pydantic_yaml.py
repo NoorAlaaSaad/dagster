@@ -1,6 +1,6 @@
 from typing import Type, TypeVar
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, parse_obj_as
 
 from dagster._model.pydantic_compat_layer import build_validation_error
 
@@ -33,7 +33,7 @@ def parse_yaml_file_to_pydantic(cls: Type[T], src: str, filename: str = "<string
     """
     parsed = parse_yaml_with_source_positions(src, filename)
     try:
-        model = cls.parse_obj(parsed.value)
+        model = parse_obj_as(cls, parsed.value)
     except ValidationError as e:
         line_errors = []
         for error in e.errors():
