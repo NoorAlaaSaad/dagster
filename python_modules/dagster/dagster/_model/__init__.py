@@ -1,8 +1,23 @@
-from functools import cached_property
-from typing import TYPE_CHECKING, Any, Dict, Hashable, Optional
+from abc import ABC
+from functools import cached_property, partial
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Hashable,
+    NamedTuple,
+    Optional,
+    Type,
+    TypeVar,
+    Union,
+)
 
 from pydantic import BaseModel, ConfigDict, PrivateAttr
-from typing_extensions import Annotated, Self, TypeAlias, TypeVar
+from typing_extensions import Annotated, Self, TypeAlias, dataclass_transform
+
+from dagster._check import build_check_call
+from dagster._utils.cached_method import ALT_CACHED_METHOD_CACHE_FIELD
 
 from .pydantic_compat_layer import USING_PYDANTIC_2
 
@@ -58,3 +73,102 @@ class DagsterModel(BaseModel):
             return super().model_construct(**kwargs)  # type: ignore
         else:
             return super().construct(**kwargs)
+
+
+T = TypeVar("T", bound=Type)
+
+
+def _banned(*args, **kwargs):
+    raise Exception("This method is not allowed on `@dagster_model`s.")
+
+
+def _dagster_model_transform(
+    cls: T,
+    *,
+    enable_cached_method: bool,
+) -> T:
+    field_set = {
+        **cls.__annotations__,
+        **({ALT_CACHED_METHOD_CACHE_FIELD: Any} if enable_cached_method else {}),
+    }
+    base = NamedTuple(f"_{cls.__name__}", field_set.items())
+    orig_new = base.__new__
+
+    checks = {
+        name: build_check_call(ttype=ttype, name=name)
+        for name, ttype in cls.__annotations__.items()
+    }
+
+    def __checked_new__(cls, *args, **kwargs):
+        for key, fn in checks.items():
+            fn(kwargs[key])
+
+        cache_fields = {ALT_CACHED_METHOD_CACHE_FIELD: {}} if enable_cached_method else {}
+        return orig_new(cls, **kwargs, **cache_fields)
+
+    base.__new__ = __checked_new__
+
+    return type(
+        cls.__name__,
+        (cls, base),
+        {
+            "__iter__": _banned,
+            "__getitem__": _banned,
+            "__hidden_iter__": base.__iter__,
+        },
+    )  # type: ignore
+
+
+@dataclass_transform()  # what dataclass transform options do we want on
+def dagster_model(
+    cls: Optional[T] = None,
+    *,
+    enable_cached_method: bool = False,
+) -> Union[T, Callable[[T], T]]:
+    if cls:
+        return _dagster_model_transform(
+            cls,
+            enable_cached_method=enable_cached_method,
+        )
+    else:
+        return partial(
+            _dagster_model_transform,
+            enable_cached_method=enable_cached_method,
+        )
+
+
+def dagster_model_with_new(
+    cls: Optional[T] = None,
+    *,
+    enable_cached_method: bool = False,
+) -> Union[T, Callable[[T], T]]:
+    """Use this when you override __new__ so the type checker respects your constructor."""
+    if cls:
+        return _dagster_model_transform(
+            cls,
+            enable_cached_method=enable_cached_method,
+        )
+    else:
+        return partial(
+            _dagster_model_transform,
+            enable_cached_method=enable_cached_method,
+        )
+
+
+class Copyable(ABC):
+    """Since the
+    * type checker doesn't know its a NamedTuple
+    * we have banned __iter__ which the _replace and _asdict use
+    we need to expose copy functionality via a class to inherit.
+    """
+
+    def copy(self, **kwargs) -> Self:
+        if not (hasattr(self, "_fields") and hasattr(self, "__hidden_iter__")):
+            raise Exception("Copyable only works for @dagster_model decorated classes")
+
+        return self.__class__(
+            **dict(
+                zip(self._fields, self.__hidden_iter__()),  # type: ignore
+                **kwargs,
+            )
+        )

@@ -1,5 +1,6 @@
 import collections.abc
 import inspect
+from functools import partial
 from os import PathLike, fspath
 from typing import (
     AbstractSet,
@@ -1797,3 +1798,16 @@ def _check_two_dim_mapping_entries(
         )  # check level two
 
     return obj
+
+
+def build_check_call(ttype: Type, name: str) -> Callable[[object], Any]:
+    # avoid getting too cute in the impl here to ensure it stays fast
+
+    if ttype is str:
+        return partial(str_param, param_name=name)
+    elif ttype is float:
+        return partial(float_param, param_name=name)
+    elif ttype is int:
+        return partial(int_param, param_name=name)
+    else:  # fallback to isinstance
+        return partial(inst_param, ttype=ttype, param_name=name)
