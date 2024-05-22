@@ -1,8 +1,9 @@
+import json
 from typing import TYPE_CHECKING, Optional, Sequence
 
 import dagster._check as check
 import graphene
-from dagster import AssetKey
+from dagster import AssetKey, _seven
 from dagster._core.definitions.backfill_policy import BackfillPolicy, BackfillPolicyType
 from dagster._core.definitions.partition import PartitionsSubset
 from dagster._core.definitions.partition_key_range import PartitionKeyRange
@@ -20,7 +21,9 @@ from dagster._core.execution.backfill import (
 )
 from dagster._core.instance import DagsterInstance
 from dagster._core.remote_representation.external import ExternalPartitionSet
+from dagster._core.storage.captured_log_manager import CapturedLogManager
 from dagster._core.storage.dagster_run import DagsterRun, RunPartitionData, RunRecord, RunsFilter
+from dagster._core.storage.local_compute_log_manager import LocalComputeLogManager
 from dagster._core.storage.tags import (
     ASSET_PARTITION_RANGE_END_TAG,
     ASSET_PARTITION_RANGE_START_TAG,
@@ -286,6 +289,10 @@ class GraphenePartitionBackfill(graphene.ObjectType):
     hasResumePermission = graphene.NonNull(graphene.Boolean)
     user = graphene.Field(graphene.String)
     tags = non_null_list("dagster_graphql.schema.tags.GraphenePipelineTag")
+    logEvents = graphene.Field(
+        graphene.NonNull("dagster_graphql.schema.instigation.GrapheneInstigationEventConnection"),
+        cursor=graphene.String()
+    )
 
     def __init__(self, backfill_job: PartitionBackfill):
         self._backfill_job = check.inst_param(backfill_job, "backfill_job", PartitionBackfill)
@@ -523,6 +530,66 @@ class GraphenePartitionBackfill(graphene.ObjectType):
 
     def resolve_user(self, _graphene_info: ResolveInfo) -> Optional[str]:
         return self._backfill_job.user
+
+    def resolve_logEvents(self, graphene_info: ResolveInfo, cursor: Optional[str] = None):
+        # very unsure how the cursor gets passed through, especially if called from get_backfills which also has a cursor
+        from ..schema.instigation import (
+            GrapheneInstigationEvent,
+            GrapheneInstigationEventConnection,
+        )
+        from ..schema.logs.log_level import GrapheneLogLevel
+
+        backfill_id = self._backfill_job.backfill_id
+        # TODO find a better way to keep this in sync. maybe store as part of the asset backfill data?
+        backfill_log_key_prefix = ["backfill", backfill_id]
+
+        instance = graphene_info.context.instance
+
+        if not isinstance(instance.compute_log_manager, CapturedLogManager):
+            return GrapheneInstigationEventConnection(events=[], cursor="", hasMore=False)
+
+        # TODO - need to gate to plus only
+
+        log_keys = sorted(
+            instance.compute_log_manager.get_log_keys_for_log_key_prefix(backfill_log_key_prefix, io_type=ComputeIOType.STDERR)
+        )
+        log_key_to_fetch = cursor.split("/") if cursor else log_keys[0]
+        log_data = instance.compute_log_manager.get_log_data(log_key_to_fetch)
+        raw_logs = log_data.stderr.decode("utf-8") if log_data.stderr else ""
+
+        records = []
+        for line in raw_logs.split("\n"):
+            if not line:
+                continue
+            try:
+                records.append(_seven.json.loads(line))
+            except json.JSONDecodeError:
+                continue
+
+        events = []
+        for record_dict in records:
+            exc_info = record_dict.get("exc_info")
+            message = record_dict.get("msg")
+            if exc_info:
+                message = f"{message}\n\n{exc_info}"
+            event = GrapheneInstigationEvent(
+                message=message,
+                level=GrapheneLogLevel.from_level(record_dict["levelno"]),
+                timestamp=int(record_dict["created"] * 1000),
+            )
+
+            events.append(event)
+        current_log_key_idx = log_keys.index(log_key_to_fetch)
+        has_more = current_log_key_idx < len(log_keys) - 1
+        if has_more:
+            next_log_key = log_keys[current_log_key_idx + 1] if current_log_key_idx < len(log_keys) - 1 else None
+        else:
+            next_log_key = None # TODO what should this be?
+        return GrapheneInstigationEventConnection(
+            events=events,
+            cursor="/".join(next_log_key),
+            hasMore=has_more,
+        )
 
 
 class GrapheneBackfillNotFoundError(graphene.ObjectType):
