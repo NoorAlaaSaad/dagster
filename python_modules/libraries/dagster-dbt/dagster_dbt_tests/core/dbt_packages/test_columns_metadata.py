@@ -22,7 +22,7 @@ from sqlglot import Dialect
 
 from ...dbt_projects import test_jaffle_shop_path, test_metadata_path
 
-core_metadata = pytest.mark.core_metadata
+metadata = pytest.mark.metadata
 
 
 def test_no_column_schema(test_jaffle_shop_manifest: Dict[str, Any]) -> None:
