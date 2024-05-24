@@ -23,7 +23,7 @@ from dagster_dbt.core.resources_v2 import (
 from ..conftest import _create_dbt_invocation
 from ..dbt_projects import test_jaffle_shop_path
 
-metadata: pytest.MarkDecorator = pytest.mark.metadata
+pytestmark = pytest.mark.metadata
 
 
 @pytest.fixture(name="standalone_duckdb_dbfile_path")
